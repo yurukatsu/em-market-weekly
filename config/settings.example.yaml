@@ -1,0 +1,24 @@
+# em-weekly の設定 (秘密情報は書かない。認証情報は環境変数 → .env.example 参照)
+# 相対パスは base_dir 基準。CLI の --base-dir / --output-dir / --graph-dir で上書きできる。
+base_dir: /home_efs/BLF
+
+input:
+  rga_universe: input/RGA_universe/emDynExTWholdListJun2026.xlsx
+  sedol_map: input/sedol対応表/BLF_sedol変換表_202501.xlsx
+  region_map: input/region_map.xlsx
+
+output_dir: output
+graph_dir: latest_graph
+
+sftp:
+  score_dir: /abe/blf/score/daily
+  bigdata_dir: /abe/blf/score/daily/bigdata
+  qip_dir: /k-manabe/share/qip/current/rga
+
+# 口座コード: until (YYYYMMDD) 以前に適用。null は無期限。
+accounts:
+  - { cd: "0064593", until: 20241217 }
+  - { cd: "0065313", until: null }
+
+benchmark: MSEM
+bigdata_min_ymd: 20260201

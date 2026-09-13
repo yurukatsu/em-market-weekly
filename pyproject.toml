@@ -1,0 +1,47 @@
+[project]
+name = "em-market-weekly"
+version = "0.1.0"
+description = "新興国株式 市場レビュー用データ作成 CLI"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "click==8.5.0",
+    "datastreampy>=2.0.30",
+    "matplotlib==3.10.3",
+    "numpy==1.26.3",
+    "openpyxl==3.1.5",
+    "pandas==2.1.4",
+    "paramiko==3.4.0",
+    "pydantic==2.11.7",
+    "python-dateutil==2.8.2",
+    "pyyaml==6.0.1",
+    "scikit-learn==1.5.2",
+    "scipy==1.14.1",
+    "seaborn==0.13.1",
+    "tqdm==4.65.0",
+]
+
+[project.scripts]
+em-weekly = "em_market_weekly.cli:cli"
+
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--doctest-modules src tests"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.6",
+    "notebook==7.4.4",
+    "pytest>=9.1.1",
+]
