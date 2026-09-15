@@ -26,21 +26,25 @@ def ret_usd(ymd: int, bids: Iterable[str]) -> pd.DataFrame:
     return ret_global_daily(ymd, ymd, bids)
 
 
-def ret_global_daily(from_ymd: int, to_ymd: int, bids: Iterable[str]) -> pd.DataFrame:
+def ret_global_daily(
+    from_ymd: int, to_ymd: int, bids: Iterable[str], *, map_ymd: int | None = None
+) -> pd.DataFrame:
     """期間中の日次 USD 建て価格リターンを取得する。
 
     ``archive/BLF.get_ret_global_daily`` の移植。bid → nam_id の対応は
-    ``from_ymd`` 時点のものを使う。
+    ``map_ymd`` (既定 ``from_ymd``) 時点のものを使う。増分計算で取得期間を
+    絞る場合も、``map_ymd`` に全期間の開始日を渡せば全期間計算と同じ対応になる。
 
     Args:
         from_ymd: 開始日 (``YYYYMMDD``)。
         to_ymd: 終了日 (``YYYYMMDD``)。
         bids: bid のリスト。
+        map_ymd: bid → nam_id 変換の基準日。``None`` なら ``from_ymd``。
 
     Returns:
         列 ``date``, ``nam_id``, ``return_price_usd``, ``bid``, ``sedol`` を持つ DataFrame。
     """
-    ch = bid_to_namid(from_ymd, bids)
+    ch = bid_to_namid(from_ymd if map_ymd is None else map_ymd, bids)
     namid = "', '".join(ch["nam_id"])
     sql = f"""
         SELECT a.date, a.nam_id, a.drtnp AS return_price_usd

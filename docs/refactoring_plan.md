@@ -293,15 +293,21 @@ Phase 0〜5 を実装済み。Phase 6（会社環境でのパリティ検証）�
 | スコアモニターの 3 回読み → 1 回 | `pipelines/score_monitor.load_scores` で必要日だけ読み 3 種類を計算 | 同上 |
 | 共通ファクターリターンの増分化 | `pipelines/incremental.make_plan` で前回出力を再利用 | ウィンドウ内の行は再計算。`--recompute` で全期間 |
 | NAM 月末エクスポージャのキャッシュ | `FileCache` kind `nam_exposure` | 同上 |
-| NAM D/S・IC・リバランス相関の増分化 | 同上 | 同上 |
+| IC・リバランス相関の増分化 | 同上 | 同上 |
+| NAM D/S | 増分化しない (下記 10.1)。月末エクスポージャのキャッシュのみ | `--refresh-cache` |
 | factor-exposure の universe_score 再実行 | 累積パネルから該当日の行を読む | `--recompute` で計算し直す |
 | universe_score の xlsx・RGA カレンダー再読込 | `UniverseInputs` で 1 回読む | なし |
 | 同一月の exposure_global 再クエリ | `data/exposures.MonthlyExposureCache` | 実行中のみ |
 | Datastream / TRC の全期間取得 | 直近 400 暦日に限定 | なし |
 
-### 10.1 増分化に伴う archive との差（パリティ検証時に注意）
+### 10.1 増分化と archive の整合
 
-- `ret_global_daily` の bid → nam_id 変換日が「期間の開始日」から「今回計算する区間の開始日」に変わる。
-- NAM の超過リターン (単純平均) は「今回計算する区間に現れる bid の集合」で平均する。archive は inception 以降の全 bid の和集合で平均していた。
-  どちらも「本来はその日のユニバース平均であるべき」ものの近似で、`--recompute` で archive と同じ集合に戻る。
+- **NAM D/S は増分化できない。** archive の分位は「期間全体の (日 × 銘柄) をまとめて `qcut`」で境界を決めるため、
+  期間の終端が伸びると過去日の値も変わる。増分計算 (過去行の再利用) は全期間計算と一致しないので、
+  `run_nam` は常に全期間で集計する。月末エクスポージャ (SFTP / DB) はキャッシュするため、
+  毎週の追加コストはリターンの SQL 2 本 (`exshare`, `GEM3_D_SRTN`) のみ。
+  日ごとの分位化に定義を変えれば増分化できるが、archive と結果が変わるので採用していない。
+- 共通ファクターリターン・IC・リバランス相関は日ごとに独立なので、同じ入力データなら増分実行と
+  `--recompute` の結果は一致する (`tests/test_pipeline_incremental.py` で確認)。
+- `ret_global_daily` に `map_ymd` を追加し、取得期間を絞っても bid → nam_id の変換日を全期間の開始日に固定できるようにした。
 - IC の `date` 列は CSV との整合のため `YYYY-MM-DD` 文字列に統一した。

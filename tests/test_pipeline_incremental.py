@@ -121,3 +121,79 @@ def test_run_common_incremental_matches_full(ctx: Context):
     full = factor_return.run_common(ctx, DAYS[0], DAYS[7])
     pd.testing.assert_frame_equal(inc, full, check_dtype=False)
     assert ctx.paths.factor_rtn_common(DAYS[0], DAYS[7]).exists()
+
+
+# ----------------------------------------------------------------------
+# NAM: 分位境界は期間全体で決まるため常に全期間集計する。前週出力の有無で結果が変わらないこと
+# ----------------------------------------------------------------------
+NAM_DAYS = [20260729, 20260730, 20260731, 20260803, 20260804, 20260831, 20260901, 20260902]
+
+
+def _fake_nam_business_days(bm: str, from_ymd: int, to_ymd: int) -> list[int]:
+    return [d for d in NAM_DAYS if from_ymd <= d <= to_ymd]
+
+
+def _fake_month_end_exposures(ctx, ends: list[int]) -> pd.DataFrame:
+    frames = []
+    for e in ends:
+        rng = np.random.default_rng(_seed(e, 4))
+        df = pd.DataFrame({"exp_date": e, "bid": BIDS, "region": ["R1", "R2"] * (len(BIDS) // 2)})
+        for f in ("ai", "ai70_bd30", "TVL", "rvl", "QIP"):
+            df[f] = rng.normal(size=len(BIDS))
+        frames.append(df)
+    return pd.concat(frames, ignore_index=True)
+
+
+def _fake_ret_days(days):
+    def fn(from_ymd: int, to_ymd: int, bids, map_ymd=None) -> pd.DataFrame:
+        rows = []
+        for d in days:
+            if not from_ymd <= d <= to_ymd:
+                continue
+            rng = np.random.default_rng(_seed(d, 5))
+            for b in BIDS:
+                rows.append(
+                    {
+                        "date": f"{str(d)[:4]}-{str(d)[4:6]}-{str(d)[6:]}",
+                        "bid": b,
+                        "return_price_usd": rng.normal(),
+                    }
+                )
+        df = pd.DataFrame(rows)
+        return df[df["bid"].isin(list(bids))].reset_index(drop=True)
+
+    return fn
+
+
+def _fake_sret(from_ymd: int, to_ymd: int, bids) -> pd.DataFrame:
+    rows = []
+    for d in NAM_DAYS:
+        if not from_ymd <= d <= to_ymd:
+            continue
+        rng = np.random.default_rng(_seed(d, 6))
+        rows += [{"dateym": d, "bid": b, "ret": rng.normal()} for b in BIDS]
+    df = pd.DataFrame(rows)
+    return df[df["bid"].isin(list(bids))].reset_index(drop=True)
+
+
+@pytest.mark.parametrize("cn", [False, True])
+def test_run_nam_incremental_matches_full(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, cn: bool
+):
+    settings.revision_window_days = 0
+    ctx = Context(settings=settings, plot=False, verbose=False)
+    monkeypatch.setattr(factor_return, "business_days", _fake_nam_business_days)
+    monkeypatch.setattr(factor_return, "month_end_exposures", _fake_month_end_exposures)
+    monkeypatch.setattr(factor_return, "ret_global_daily", _fake_ret_days(NAM_DAYS))
+    monkeypatch.setattr(factor_return, "sret_global_daily", _fake_sret)
+
+    from_ymd = NAM_DAYS[3]  # 20260803
+    # 前週の出力があっても、その後の実行は常に全期間集計と同じ結果になること
+    factor_return.run_nam(ctx, from_ymd, NAM_DAYS[5], cn=cn)
+    weekly_d, weekly_s = factor_return.run_nam(ctx, from_ymd, NAM_DAYS[7], cn=cn)
+    ctx.recompute = True
+    full_d, full_s = factor_return.run_nam(ctx, from_ymd, NAM_DAYS[7], cn=cn)
+
+    assert weekly_d["date"].tolist() == NAM_DAYS[3:]
+    pd.testing.assert_frame_equal(weekly_d, full_d, check_dtype=False)
+    pd.testing.assert_frame_equal(weekly_s, full_s, check_dtype=False)

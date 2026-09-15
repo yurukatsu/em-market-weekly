@@ -162,7 +162,12 @@ def run_nam(
     """NAM ファクターの最上位分位ポートフォリオの日次リターン (D / S) を計算して保存する。
 
     ``archive/BLF.fret_nam_daily(from_ymd, to_ymd, CN, q)`` の置き換え。
-    超過リターンはユニバース単純平均に対するもの。前回出力があれば増分計算する。
+    超過リターンはユニバース単純平均に対するもの。
+
+    分位の境界は archive と同様に「期間全体の (日 × 銘柄) をまとめて分位化」して決める。
+    そのため過去日の値も期間の終端に依存し、増分計算では全期間計算と一致しない。
+    この関数は常に全期間で集計する。重い月末エクスポージャの取得は
+    ``month_end_exposures`` がキャッシュするので、毎週の追加コストはリターンの SQL 2 本のみ。
 
     Args:
         ctx: 実行コンテキスト。
@@ -178,53 +183,32 @@ def run_nam(
     calendar = business_days(settings.benchmark, NAM_CALENDAR_START_YMD, CALENDAR_END_YMD)
     ends = month_ends(calendar, drop_last=True)
     days = [d for d in calendar if from_ymd <= d <= to_ymd]
+    ctx.log(f"NAM factor return: {len(days)} days (full aggregation)")
 
-    ex_d = ctx.paths.latest_range_file(ctx.paths.factor_rtn_nam_dir("Drtn"), "", from_ymd, to_ymd)
-    ex_s = ctx.paths.latest_range_file(ctx.paths.factor_rtn_nam_dir("Srtn"), "", from_ymd, to_ymd)
-    existing_end = min(ex_d[1], ex_s[1]) if ex_d and ex_s else None
-    plan = _plan(ctx, days, existing_end, to_ymd)
-    kept_d = load_kept_rows(ex_d[0] if ex_d else None, "date", plan)
-    kept_s = load_kept_rows(ex_s[0] if ex_s else None, "dateym", plan)
+    ends_series = pd.Series(ends)
+    needed_ends = sorted(
+        {int(ends_series[ends_series <= d].max()) for d in days if (ends_series <= d).any()}
+    )
+    exposure = assign_quantiles(
+        expand_month_end_exposures(month_end_exposures(ctx, needed_ends), days, ends),
+        q=q,
+        columns=NAM_FACTORS,
+        by_region=cn,
+    )
+    bids = exposure["bid"].unique().tolist()
 
-    new_d = pd.DataFrame(columns=["date"])
-    new_s = pd.DataFrame(columns=["dateym"])
-    if plan.compute_days:
-        ends_series = pd.Series(ends)
-        needed_ends = sorted(
-            {
-                int(ends_series[ends_series <= d].max())
-                for d in plan.compute_days
-                if (ends_series <= d).any()
-            }
-        )
-        exposure = assign_quantiles(
-            expand_month_end_exposures(
-                month_end_exposures(ctx, needed_ends), plan.compute_days, ends
-            ),
-            q=q,
-            columns=NAM_FACTORS,
-            by_region=cn,
-        )
-        bids = exposure["bid"].unique().tolist()
-        first, last = plan.compute_days[0], plan.compute_days[-1]
+    ret = ret_global_daily(days[0], days[-1], bids)
+    ret["date"] = ret["date"].astype(str).str.replace("-", "").astype(int)
+    ret = demean_by_date(ret, "date", "return_price_usd")
 
-        ret = ret_global_daily(first, last, bids)
-        ret["date"] = ret["date"].astype(str).str.replace("-", "").astype(int)
-        ret = demean_by_date(ret, "date", "return_price_usd")
+    sret = sret_global_daily(days[0], days[-1], bids)
+    sret["dateym"] = sret["dateym"].astype(int)
+    sret = demean_by_date(sret, "dateym", "ret")
 
-        sret = sret_global_daily(first, last, bids)
-        sret["dateym"] = sret["dateym"].astype(int)
-        sret = demean_by_date(sret, "dateym", "ret")
-
-        new_d = top_quantile_returns(
-            ret, exposure, date_col="date", value_col="return_price_usd", q=q
-        ).reset_index()
-        new_s = top_quantile_returns(
-            sret, exposure, date_col="dateym", value_col="ret", q=q
-        ).reset_index()
-
-    d = merge_rows(kept_d, new_d, "date")
-    s = merge_rows(kept_s, new_s, "dateym")
+    d = top_quantile_returns(
+        ret, exposure, date_col="date", value_col="return_price_usd", q=q
+    ).reset_index()
+    s = top_quantile_returns(sret, exposure, date_col="dateym", value_col="ret", q=q).reset_index()
 
     d_path = ctx.paths.factor_rtn_nam("Drtn", from_ymd, to_ymd)
     d.to_csv(d_path, index=False)
