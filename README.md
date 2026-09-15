@@ -7,8 +7,11 @@
 ```bash
 uv sync
 cp config/settings.example.yaml config/settings.yaml   # パスを環境に合わせて編集
-cp .env.example .env                                   # 認証情報を記入してシェルで読み込む
+cp .env.example .env                                   # 認証情報を記入する
 ```
+
+`.env` はカレントディレクトリ (通常はプロジェクトルート) のものを CLI が自動で読む。
+別の場所に置く場合は `--env-file PATH` で指定する。すでにシェルで設定済みの環境変数が優先される。
 
 会社環境でのみ必要なもの: `pylabcore` (社内 DB)、`DatastreamPy`、itaap への SFTP 接続。
 自宅環境では `features/` と `plots/` の単体テストのみ動く。
@@ -44,6 +47,7 @@ uv run em-weekly score-monitor    --inception 20260130 --to 20260901 --reb 20260
 
 ```bash
 uv run em-weekly --config other.yaml --base-dir /tmp/blf --no-plot score-cumulative --to 20260901
+uv run em-weekly --env-file ~/.secrets/em.env weekly --from ... --to ... --inception ... --reb ...
 ```
 
 `--base-dir` / `--output-dir` / `--graph-dir` で出力先を任意に変更できる。

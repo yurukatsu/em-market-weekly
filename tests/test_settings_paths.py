@@ -50,3 +50,18 @@ def test_account_cd_no_match():
     )
     with pytest.raises(ValueError):
         s.account_cd(20260101)
+
+
+def test_load_dotenv_and_env_required(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from em_market_weekly.settings import env_required, load_dotenv
+
+    env = tmp_path / ".env"
+    env.write_text('# c\nA_TEST=1\nB_TEST="two"\nC_TEST=\nexport D_TEST=4\n', encoding="utf-8")
+    for k in ("A_TEST", "B_TEST", "C_TEST", "D_TEST"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("A_TEST", "keep")
+    assert load_dotenv(env) == ["B_TEST", "C_TEST", "D_TEST"]
+    assert env_required("A_TEST") == "keep" and env_required("B_TEST") == "two"
+    with pytest.raises(KeyError):
+        env_required("C_TEST")  # 空文字は未設定扱い
+    assert load_dotenv(tmp_path / "missing.env") == []

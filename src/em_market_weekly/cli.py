@@ -21,7 +21,7 @@ from em_market_weekly.pipelines import (
     weekly,
 )
 from em_market_weekly.pipelines.context import Context
-from em_market_weekly.settings import DEFAULT_CONFIG_PATH
+from em_market_weekly.settings import DEFAULT_CONFIG_PATH, DEFAULT_ENV_PATH, load_dotenv
 
 _YMD = click.IntRange(19000101, 21001231)
 
@@ -42,6 +42,13 @@ _YMD = click.IntRange(19000101, 21001231)
 @click.option(
     "--graph-dir", type=click.Path(path_type=Path), default=None, help="図の出力先の上書き"
 )
+@click.option(
+    "--env-file",
+    type=click.Path(path_type=Path),
+    default=DEFAULT_ENV_PATH,
+    show_default=True,
+    help="認証情報を読む .env のパス (無ければ環境変数のみ)",
+)
 @click.option("--no-plot", is_flag=True, help="図を生成しない")
 @click.option("-q", "--quiet", is_flag=True, help="進捗を表示しない")
 @click.option("--recompute", is_flag=True, help="前回出力を使わず全期間を再計算する")
@@ -53,12 +60,14 @@ def cli(
     base_dir: Path | None,
     output_dir: Path | None,
     graph_dir: Path | None,
+    env_file: Path,
     no_plot: bool,
     quiet: bool,
     recompute: bool,
     refresh_cache: bool,
 ) -> None:
     """新興国株式 市場レビュー用データ作成 CLI"""
+    load_dotenv(env_file)
     ctx.obj = Context.from_config(
         config_path,
         base_dir=base_dir,

@@ -143,8 +143,55 @@ class Settings(BaseModel):
         raise ValueError(f"No account rule matches {ymd}.")
 
 
+DEFAULT_ENV_PATH = Path(".env")
+
+
+def load_dotenv(path: Path | str = DEFAULT_ENV_PATH, *, override: bool = False) -> list[str]:
+    """``.env`` ファイルを読んで環境変数に設定する (依存パッケージなしの簡易実装)。
+
+    ``KEY=VALUE`` 形式の行を読む。空行と ``#`` で始まる行は無視し、
+    値の前後の空白と引用符 (``"`` / ``'``) は取り除く。``export KEY=VALUE`` も可。
+
+    Args:
+        path: ``.env`` のパス。存在しなければ何もしない。
+        override: ``True`` なら既存の環境変数を上書きする。
+
+    Returns:
+        設定した環境変数名のリスト。
+
+    Examples:
+        >>> import tempfile
+        >>> with tempfile.NamedTemporaryFile("w", suffix=".env", delete=False) as f:
+        ...     _ = f.write("# comment\\nFOO_X=1\\nexport BAR_X='two'\\n")
+        >>> load_dotenv(f.name)
+        ['FOO_X', 'BAR_X']
+        >>> os.environ["BAR_X"]
+        'two'
+    """
+    p = Path(path)
+    if not p.exists():
+        return []
+    loaded: list[str] = []
+    for raw in p.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        line = line.removeprefix("export ")
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        if not key:
+            continue
+        if override or not os.environ.get(key):
+            os.environ[key] = value
+            loaded.append(key)
+    return loaded
+
+
 def env_required(key: str) -> str:
-    """必須の環境変数を読む。
+    """必須の環境変数を読む。空文字は未設定とみなす。
 
     Args:
         key: 環境変数名。
@@ -153,9 +200,12 @@ def env_required(key: str) -> str:
         環境変数の値。
 
     Raises:
-        KeyError: 未設定の場合。
+        KeyError: 未設定または空の場合。
     """
-    try:
-        return os.environ[key]
-    except KeyError as exc:
-        raise KeyError(f"Environment variable {key!r} is required.") from exc
+    value = os.environ.get(key)
+    if not value:
+        raise KeyError(
+            f"Environment variable {key!r} is required. "
+            "Set it in the shell or in a .env file (see .env.example)."
+        )
+    return value
