@@ -87,10 +87,10 @@ class BaseDatabase(ABC):
 
     @classmethod
     def check_connection(cls) -> None:
-        """データベースへの接続を確認する。
+        """データベースへの接続を確認する (疎通テスト用)。
 
-        ``SELECT 1`` を実行し、接続情報が登録されていること、
-        および SQL を実行できることを確認する。
+        接続情報を登録してから ``SELECT 1`` を実行する。
+        通常のクエリ実行 (``get_data``) では呼ばない。
 
         Raises:
             DatabaseNotConfiguredError: ``symbol_name`` に対応する接続情報が
@@ -98,12 +98,12 @@ class BaseDatabase(ABC):
         """
         from pylabcore.database import execute_sql
 
+        cls.set_db_info()
         try:
             execute_sql("SELECT 1;", cls.symbol_name)
         except KeyError as exc:
             raise DatabaseNotConfiguredError(
-                f"Database information for {cls.symbol_name!r} is not configured. "
-                "Register it by calling set_db_info() first."
+                f"Database information for {cls.symbol_name!r} is not configured."
             ) from exc
 
 
@@ -113,13 +113,15 @@ def get_data(
     *,
     params: dict[str, str] | None = None,
     strip_strings: bool = True,
-    verbose: bool = False,
     user_name: str | None = None,
     user_passwd: str | None = None,
 ) -> pd.DataFrame:
     """指定した SQL を実行し、取得結果を DataFrame として返す。
 
-    接続情報が未登録なら環境変数から登録してから実行する。
+    pylabcore の接続情報はグローバルな辞書に保持されており、``set_db_info`` の
+    呼び出しで他の接続先の情報が失われることがある。そのため「登録済みかを確認して
+    未登録なら登録する」のではなく、実行直前に必ず対象 DB の接続情報を登録し直す。
+    登録は辞書への代入だけで接続は行わないので、毎回呼んでもコストはない。
 
     Args:
         sql: 実行する SQL。
@@ -127,7 +129,6 @@ def get_data(
         params: SQL に渡すパラメータ。
         strip_strings: ``True`` なら文字列セルの前後空白を除去する
             (archive の ``sql_connect.get_sql`` と同じ挙動)。
-        verbose: 接続設定時にメッセージを表示するか。
         user_name: ユーザー名 (環境変数より優先)。
         user_passwd: パスワード (環境変数より優先)。
 
@@ -140,14 +141,7 @@ def get_data(
     """
     from pylabcore.database import fetch_data
 
-    try:
-        database.check_connection()
-    except DatabaseNotConfiguredError:
-        if verbose:
-            print("Database information is not configured. Configuring the connection settings.")
-        database.set_db_info(user_name=user_name, user_passwd=user_passwd)
-        database.check_connection()
-
+    database.set_db_info(user_name=user_name, user_passwd=user_passwd)
     df = fetch_data(sql, database.symbol_name, params=params)
     if strip_strings:
         df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
